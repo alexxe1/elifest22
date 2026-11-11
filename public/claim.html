@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f0f17">
+<title>ELIFEST 22 · QR</title>
+<link rel="stylesheet" href="/ui.css">
+<script src="/session.js"></script><script src="/ui.js"></script>
+</head><body>
+<div class="hero-t">🔎 ELIFEST 22</div>
+<div class="mut" style="text-align:center;margin-bottom:8px">Búsqueda del tesoro</div>
+<div id="app" class="card" style="text-align:center"></div>
+<script>
+var $=function(s){return document.querySelector(s)};
+var token=Sess.get(),code=decodeURIComponent(location.pathname.split('/')[2]||'');
+var home='<a class="btn" href="/">Ir al inicio</a>';
+var LOAD='<div style="padding:18px 0"><span class="spin" style="width:2em;height:2em"></span><div class="mut" style="margin-top:10px">Escaneando…</div></div>';
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function show(h){$('#app').innerHTML='<div class="fade">'+h+'</div>'}
+function call(path,body){
+  var ub=UI.begin();
+  return fetch(path,{method:'POST',headers:{'content-type':'application/json',authorization:token?'Bearer '+token:''},body:JSON.stringify(body)})
+    .then(function(r){return r.json().then(function(j){j._s=r.status;UI.end(ub);return j})})
+    .catch(function(e){UI.end(ub);throw e});
+}
+function claim(){
+  $('#app').innerHTML=LOAD;
+  call('/api/qr/claim',{token:code}).then(function(r){
+    if(r._s===401){token=null;Sess.clear();login();return}
+    var cat={facil:'Fácil',medio:'Medio',dificil:'Difícil',extremo:'¡EXTREMO!'};
+    if(r.state==='ok'){toast('+'+r.chips+' fichas 🎉','ok');show('<div class="big pop" style="font-size:72px">🎉</div><h2>¡Lo encontraste!</h2><div class="mut">Categoría</div><div style="font-size:26px;font-weight:800">'+(cat[r.category]||r.category)+'</div><div class="big pop">+'+r.chips+' <span class="chip"></span></div>'+home)}
+    else if(r.state==='closed')show('<div style="font-size:56px">⏳</div><h2>Todavía no empezó</h2><div class="mut">Volvé a escanear cuando se abra la búsqueda.</div>'+home);
+    else if(r.state==='already_used')show('<div style="font-size:56px">✋</div><h2>Ya usaste tu QR</h2><div class="mut">Cada persona puede reclamar uno solo.</div>'+home);
+    else if(r.state==='taken')show('<div style="font-size:56px">😅</div><h2>Este QR ya fue reclamado</h2><div class="mut">Probá con otro.</div>'+home);
+    else show('<div style="font-size:56px">🤔</div><h2>QR no válido</h2><div class="mut">Algo salió mal con este código.</div>'+home);
+  }).catch(function(){show('<div class="err">Sin conexión. Probá de nuevo.</div><button onclick="claim()">Reintentar</button>')});
+}
+function login(){
+  $('#app').innerHTML='<div class="sk"></div>';
+  fetch('/api/names').then(function(r){return r.json()}).then(function(ns){
+    $('#app').innerHTML='<div class="fade" style="text-align:left"><h2>Entrá para reclamar</h2><select id="u"><option value="">Elegí tu nombre…</option>'+
+      ns.map(function(n){return '<option value="'+n.id+'">'+esc(n.name)+'</option>'}).join('')+'</select>'+
+      '<input id="pin" type="tel" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="PIN (4 dígitos)"><div class="err" id="err"></div><button id="go">Entrar</button></div>';
+    $('#u').onchange=function(){$('#pin').focus()};
+    $('#pin').oninput=function(){if(this.value.length===4&&$('#u').value)$('#go').click()};
+    $('#go').onclick=function(){
+      var id=$('#u').value,pin=$('#pin').value;
+      if(!id||pin.length!==4){$('#err').textContent='Elegí tu nombre y poné el PIN';return}
+      call('/api/login',{user_id:Number(id),pin:pin}).then(function(r){
+        if(r.token){token=r.token;if(!Sess.set(token))toast(SESS_WARN,'err',7000);claim()}
+        else{$('#err').textContent=r.error||'Error';toast(r.error||'Error','err',4000);$('#pin').value=''}
+      }).catch(function(){});
+    };
+  });
+}
+if(token)claim();else login();
+</script></body></html>

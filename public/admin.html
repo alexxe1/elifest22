@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · ELIFEST 22</title>
+<link rel="stylesheet" href="/ui.css">
+<style>
+body{max-width:780px}
+.row{gap:8px}.row span{flex:1}.row button{width:auto;margin:0;padding:9px 14px}.row input{width:auto;margin:0}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tarjeta{border:2px dashed #999;border-radius:10px;padding:14px;text-align:center;color:#111;background:#fff}
+.tarjeta b{font-size:22px;display:block}.tarjeta .pin{font-size:34px;letter-spacing:6px;font-weight:800}
+#print{display:none}
+@media print{body{background:#fff}#main{display:none}#print{display:block}#bar,#toast{display:none}}
+.qrs{display:none;grid-template-columns:repeat(3,1fr);gap:12px}.qc{text-align:center;color:#000;font:bold 18px sans-serif;page-break-inside:avoid}.qc svg{width:100%;height:auto}
+</style><script src="/qrcode.js"></script><script src="/ui.js"></script></head><body>
+<div id="main">
+<h1>Panel admin · ELIFEST 22</h1>
+<div class="card"><input id="pw" type="password" placeholder="Contraseña de admin"><button onclick="login()">Entrar</button><div id="msg"></div></div>
+<div id="panel" style="display:none">
+  <div class="card"><h2>Importar invitados</h2>
+    <textarea id="names" rows="6" placeholder="Un nombre por línea"></textarea>
+    <button onclick="imp()">Crear invitados y PINs</button>
+    <button onclick="window.print()">🖨️ Imprimir tarjetas</button>
+    <div id="pinlist"></div>
+  </div>
+  <div class="card"><h2>Invitados</h2><div id="users"></div></div>
+  <div class="card"><h2>Nuevo torneo</h2>
+    <input id="tname" placeholder="Nombre (ej: Copa FC 26)">
+    <select id="tgame" style="width:100%;padding:10px" onchange="document.getElementById('tteams').style.display=this.value==='FC 26'?'':'none'"><option>FC 26</option><option>Tenis de mesa</option><option>Piedra, papel o tijera</option></select>
+    <div id="plist" style="max-height:200px;overflow:auto;margin:6px 0"></div>
+    <div style="color:#9a9ab0">Equipos FC 26 (se sortean entre los jugadores; podés editar la lista):</div><textarea id="tteams" rows="8">Napoli
+Bayer Leverkusen
+Arsenal
+Paris Saint-Germain
+Real Madrid
+Barcelona
+Liverpool
+Manchester City
+Bayern Munich
+Atletico Madrid
+Manchester United
+Chelsea
+Spurs
+Juventus
+Inter de Milán
+Borussia Dortmund</textarea>
+    <button onclick="createT()">🎲 Sortear y crear</button></div>
+  <div class="card"><h2>Torneos</h2><div id="tlist" style="margin-bottom:10px"></div><h2>Partidos para resolver</h2><div id="tmatches"></div></div>
+  <div class="card"><h2>Configuración</h2><div id="cfg"></div><button onclick="saveCfg()">Guardar</button></div>
+  <div class="card"><button onclick="exp()">⬇️ Exportar todo (JSON)</button></div>
+  <div class="card"><h2>📸 Foto-retos</h2>
+    <div id="phinfo" style="margin-bottom:6px">…</div>
+    <button onclick="phStart()">🎲 Lanzar foto-reto (misión al azar)</button>
+    <button onclick="phStart(true)">✏️ Lanzar con misión propia</button>
+    <button onclick="phAct('next')">⏭️ Pasar a la siguiente fase ahora</button>
+    <button onclick="phAct('cancel')">✖️ Cancelar</button>
+    <div id="phlist" style="margin-top:8px"></div></div>
+  <div class="card"><h2>Apuestas (partido en turno)</h2>
+    <div id="betinfo" style="margin-bottom:6px">…</div>
+    <button onclick="betAct('close')">⏹️ Cerrar ya</button>
+    <button onclick="betAct('open')">🔁 Reabrir 90 s</button>
+    <button onclick="betAct('void')">↩️ Anular apuestas (devuelve las fichas)</button></div>
+  <div class="card"><h2>Búsqueda del tesoro (QRs)</h2>
+    <div style="display:flex;gap:6px"><input id="qf" placeholder="Fáciles" value="20"><input id="qm" placeholder="Medios" value="15"><input id="qd" placeholder="Difíciles" value="5"><input id="qe" placeholder="Extremos" value="2"></div>
+    <button onclick="genQ()">➕ Generar lote</button>
+    <button id="huntBtn" onclick="toggleHunt()">…</button>
+    <button onclick="printQR()">🖨️ Imprimir QRs (solo código corto)</button>
+    <button onclick="csvQ()">⬇️ Exportar lista a CSV</button>
+    <div id="qlist" style="margin-top:8px"></div></div>
+  <div class="card" style="border:2px solid #ff5a5a"><h2>Zona peligrosa</h2><div style="color:#9a9ab0">Solo para pruebas: borra invitados, fichas, torneos, partidos, fotos y QRs. <b>La configuración NO se toca.</b></div><button style="background:#ff5a5a;color:#fff" onclick="resetAll()">🗑️ Reiniciar toda la base de datos</button><button class="sec" onclick="resetCfg()">↩️ Restaurar la configuración a los valores por defecto</button></div>
+</div></div>
+<div id="print"><div class="cards" id="cardsOut"></div><div class="qrs" id="qrOut"></div></div>
+<script>
+var pw='',$=function(s){return document.getElementById(s)};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function A(path,body){
+  var o={headers:{'x-admin-password':pw,'content-type':'application/json'}};
+  if(body!==undefined){o.method='POST';o.body=JSON.stringify(body)}
+  var ub=UI.begin();
+  return fetch(path,o).then(function(r){return r.json()}).then(function(j){UI.end(ub);return j},function(e){UI.end(ub);if(ub)toast('Sin conexión','err');throw e});
+}
+// Los avisos viejos (alert) pasan a ser toasts; el PIN nuevo sigue siendo un alert para que no se pierda.
+var _alert=window.alert.bind(window);
+window.alert=function(m){m=String(m);if(/^PIN nuevo/.test(m))return _alert(m);toast(m,/^(Creados|Guardado|Listo|Base reiniciada|Torneo creado)/.test(m)?'ok':'err',4200)};
+var autoV=-1,autoOn=false;
+function typing(){var e=document.activeElement;return e&&(e.tagName==='INPUT'||e.tagName==='TEXTAREA'||e.tagName==='SELECT')}
+function pollAuto(){
+  fetch('/api/version').then(function(r){return r.json()}).then(function(j){
+    if(j.v!==autoV){
+      if(typing())return;            // no pisar lo que estás escribiendo; reintenta en el próximo ciclo
+      autoV=j.v;load(true);
+    }
+  }).catch(function(){});
+}
+function startAuto(){
+  if(autoOn)return;autoOn=true;
+  setInterval(pollAuto,3000);
+  setInterval(function(){if(!typing()){loadB();loadP()}},10000);   // respaldo por si algo no avisó
+  document.addEventListener('focusout',function(){setTimeout(pollAuto,500)});
+}
+function login(){
+  pw=$('pw').value.trim();
+  A('/api/admin/ping').then(function(r){
+    if(r.ok){$('panel').style.display='block';load();startAuto()}else $('msg').textContent=r.error||'Error desconocido';
+  }).catch(function(e){$('msg').textContent='No se pudo conectar: '+e.message});
+}
+var CFGL={initial_chips:'Fichas iniciales por persona',chips_play:'FC / Tenis de mesa: fichas por jugar',chips_win:'FC / Tenis de mesa: fichas por ganar',
+  ppt_chips_play:'Piedra, papel o tijera: fichas por jugar',ppt_chips_win:'Piedra, papel o tijera: fichas por ganar',
+  bonus_champion:'Bonus campeón del torneo',bonus_runnerup:'Bonus subcampeón',bonus_semi:'Bonus semifinalistas (cada uno)',
+  wait_confirm:'Esperar la confirmación del resultado antes del siguiente partido (1 sí / 0 no)',max_sessions:'Dispositivos permitidos por PIN',
+  bet_window_secs:'Apuestas: duración de la ventana (segundos)',bet_cooldown_secs:'Apuestas: espera antes de abrir (segundos)',
+  bet_max_abs:'Apuestas: máximo por apuesta (fichas)',bet_max_pct:'Apuestas: máximo en % del saldo',bet_seed:'Apuestas: bote base de la casa (fichas)',bet_mult_cap:'Apuestas: tope del multiplicador',
+  qr_facil:'QR fácil: fichas',qr_medio:'QR medio: fichas',qr_dificil:'QR difícil: fichas',qr_extremo:'QR extremo: fichas',qr_hunt_open:'Búsqueda del tesoro abierta (1 sí / 0 no)',
+  photo_secs:'Foto-reto: segundos para subir fotos',vote_secs:'Foto-reto: segundos de votación',photo_prize:'Foto-reto: premio a la foto más votada',photo_part:'Foto-reto: fichas por participar'};
+function load(auto){loadT();loadQ();loadB();loadP();
+  A('/api/admin/users').then(function(us){
+    $('users').innerHTML=us.map(function(u){
+      return '<div class="row"><span>'+esc(u.name)+(u.entered?' ✅'+(u.entered>1?' <small style="color:#9a9ab0">×'+u.entered+' celus</small>':''):' <small style="color:#9a9ab0">(sin entrar)</small>')+' — <b>'+u.chips+'</b> <span class="chip"></span></span>'+
+        '<button onclick="adj('+u.id+')">±</button><button onclick="rp('+u.id+',\''+esc(u.name).replace(/'/g,'')+'\')">PIN</button></div>'}).join('')||'Todavía no hay invitados';
+  });
+  if(auto)return;
+  A('/api/admin/config').then(function(c){
+    var order=Object.keys(CFGL).filter(function(k){return k in c}).concat(Object.keys(c).filter(function(k){return k!=='data_version'&&!(k in CFGL)}));
+    $('cfg').innerHTML=order.map(function(k){
+      return '<label style="display:block;margin-top:8px"><span style="color:#9a9ab4;font-size:14px">'+(CFGL[k]||k)+'</span><input data-k="'+k+'" value="'+esc(c[k])+'"></label>'}).join('');
+  });
+}
+function cards(list){
+  var pl=document.getElementById('pinlist');
+  if(pl)pl.innerHTML=list.filter(function(x){return x.pin}).map(function(x){return '<div class="row"><span>'+esc(x.name)+'</span><b style="letter-spacing:3px">'+x.pin+'</b></div>'}).join('');
+  $('cardsOut').innerHTML=list.filter(function(x){return x.pin}).map(function(x){
+    return '<div class="tarjeta"><div style="font-weight:800;letter-spacing:2px">🎉 ELIFEST 22</div><b>'+esc(x.name)+'</b>PIN<div class="pin">'+x.pin+'</div><div style="font-size:12px">De un solo uso · no lo compartas</div></div>'}).join('');
+}
+function imp(){
+  var names=$('names').value.split('\n').map(function(s){return s.trim()}).filter(Boolean);
+  A('/api/admin/users',{names:names}).then(function(r){
+    cards(r);$('names').value='';load();
+    var bad=r.filter(function(x){return x.error}).map(function(x){return x.name}).join(', ');
+    alert('Listo. Ya podés imprimir las tarjetas.'+(bad?'\nYa existían: '+bad:''));
+  });
+}
+function loadT(){
+  A('/api/admin/users').then(function(us){
+    var old=[].slice.call(document.querySelectorAll('#plist input:checked')).map(function(i){return i.value});
+    $('plist').innerHTML=us.map(function(u){return '<label style="display:block"><input type="checkbox" style="width:auto" value="'+u.id+'"'+(old.indexOf(String(u.id))>=0?' checked':'')+'> '+esc(u.name)+'</label>'}).join('');
+  });
+  fetch('/api/tournaments').then(function(r){return r.json()}).then(function(ts){
+    $('tlist').innerHTML=ts.map(function(t){return '<div class="row"><span><b>'+esc(t.name)+'</b> · '+esc(t.game)+' · '+t.status+'</span><button class="sec" onclick="delT('+t.id+',this.dataset.n)" data-n="'+esc(t.name)+'">🗑️ Eliminar</button></div>'}).join('')||'<span style="color:#9a9ab4">No hay torneos</span>';
+    var h='';
+    ts.forEach(function(t){
+      var nm=function(id){var p=t.players.filter(function(x){return x.id===id})[0];return p?esc(p.name):'?'};
+      t.matches.filter(function(x){return x.player_a&&x.player_b&&x.status!=='confirmed'}).forEach(function(x){
+        h+='<div class="row"><span><b>'+esc(t.name)+'</b> · '+nm(x.player_a)+' vs '+nm(x.player_b)+' ['+x.status+(x.score_a!=null?' '+x.score_a+'-'+x.score_b:'')+']</span>'+
+          '<input id="ra'+x.id+'" style="width:60px" placeholder="A"><input id="rb'+x.id+'" style="width:60px" placeholder="B"><button onclick="resolve('+x.id+')">OK</button></div>';
+      });
+    });
+    $('tmatches').innerHTML=h||'Nada pendiente';
+  });
+}
+function delT(id,name){
+  if(!confirm('¿Eliminar el torneo "'+name+'"?\nSe borran sus partidos y apuestas, y se revierten las fichas que dio. No se puede deshacer.'))return;
+  A('/api/admin/tournaments/'+id+'/delete',{}).then(function(r){if(r.error)alert(r.error);else{alert('Guardado: torneo eliminado');load()}});
+}
+function createT(){
+  var ids=[].slice.call(document.querySelectorAll('#plist input:checked')).map(function(i){return Number(i.value)});
+  var g=$('tgame').value,fc=g==='FC 26';
+  A('/api/admin/tournaments',{name:$('tname').value||g,game:g,user_ids:ids,
+    teams:fc?$('tteams').value.split('\n'):[],best_of:fc?1:5,points_to_win:g==='Tenis de mesa'?6:null}).then(function(r){
+    alert(r.error||'Torneo creado');loadT();
+  });
+}
+function resolve(id){
+  A('/api/admin/matches/'+id+'/resolve',{score_a:$('ra'+id).value,score_b:$('rb'+id).value}).then(function(r){
+    if(r.error)alert(r.error);loadT();load();
+  });
+}
+function resetCfg(){
+  if(!confirm('¿Volver TODOS los valores de configuración a los de fábrica?'))return;
+  A('/api/admin/reset_config',{}).then(function(r){if(r.error)alert(r.error);else{alert('Guardado: configuración restaurada');load()}});
+}
+function resetAll(){
+  if(!confirm('¿Seguro? Se borra TODO (invitados, fichas, torneos, fotos, QRs). La configuración se conserva.'))return;
+  if(prompt('Escribí BORRAR para confirmar')!=='BORRAR')return;
+  A('/api/admin/reset',{confirm:'BORRAR'}).then(function(r){
+    if(r.error){alert(r.error);return}
+    $('cardsOut').innerHTML='';alert('Base reiniciada. Todo en cero.');load();
+  });
+}
+var phc=null;
+function loadP(){
+  A('/api/admin/photo/state').then(function(j){
+    phc=j.challenge||null;
+    var lb={collecting:'📥 recibiendo fotos',voting:'🗳️ votando',finished:'✅ terminado',cancelled:'⛔ cancelado'};
+    $('phinfo').innerHTML=phc?'<b>«'+esc(phc.mission)+'»</b> · '+lb[phc.status]+((phc.status==='collecting'||phc.status==='voting')?' · quedan '+phc.secs_left+' s':''):'Todavía no hubo foto-retos';
+    $('phlist').innerHTML=(j.photos||[]).map(function(p){
+      return '<div style="display:inline-block;margin:4px;text-align:center;width:92px"><img src="/api/photo/img/'+p.id+'" style="width:92px;height:92px;object-fit:cover;border-radius:8px"><br><small>'+esc(p.name)+' · '+p.votes+'</small>'+
+        ((phc&&(phc.status==='collecting'||phc.status==='voting'))?'<br><button style="padding:4px" onclick="phDel('+p.id+')">🗑️</button>':'')+'</div>';
+    }).join('');
+  }).catch(function(){});
+}
+function phStart(custom){
+  var mission='';
+  if(custom){mission=prompt('Escribí la misión del foto-reto');if(!mission)return}
+  A('/api/admin/photo/start',{mission:mission}).then(function(r){if(r.error)alert(r.error);loadP()});
+}
+function phAct(a){
+  if(a==='cancel'&&!confirm('¿Cancelar el foto-reto en marcha? No se reparten fichas.'))return;
+  A('/api/admin/photo/'+a,{}).then(function(r){if(r.error)alert(r.error);loadP()});
+}
+function phDel(id){if(confirm('¿Borrar esta foto?'))A('/api/admin/photo/delete',{photo_id:id}).then(loadP)}
+var curBet=null;
+var betEnd=0,betOn=false;
+function bcd(){var s=Math.max(0,Math.round((betEnd-Date.now())/1000));return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+function loadB(){
+  fetch('/api/bets/current').then(function(r){return r.json()}).then(function(j){
+    curBet=j.match||null;betOn=!!(j.match&&j.betting);betEnd=Date.now()+(j.secs_left||0)*1000;
+    $('betinfo').innerHTML=j.match?'<b>'+esc(j.match.a.name)+' vs '+esc(j.match.b.name)+'</b> · '+(j.betting?'🟢 abiertas (<span id="bcd">'+bcd()+'</span>)':(j.cooldown?'🟡 abren en '+j.starts_in+' s':'🔴 cerradas'))+' · pozo '+j.pot+' <span class="chip"></span><br>'+esc(j.match.a.name)+': '+j.match.a.chips+' · '+esc(j.match.b.name)+': '+j.match.b.chips:'No hay partido en turno';
+  }).catch(function(){});
+}
+// Cronómetro local: baja solo y, al llegar a 0, refresca el estado
+setInterval(function(){
+  if(!betOn)return;
+  var e=$('bcd');if(e)e.textContent=bcd();
+  if(Date.now()>=betEnd){betOn=false;loadB()}
+},1000);
+function betAct(a){
+  if(!curBet){alert('No hay partido en turno');return}
+  if(a==='void'&&!confirm('¿Devolver todas las apuestas de este partido?'))return;
+  A('/api/admin/matches/'+curBet.id+'/bets',{action:a,secs:90}).then(function(r){if(r.error)alert(r.error);loadB()});
+}
+var qrs=[],hunt='0';
+function qc(id){return 'Q-'+String(id).padStart(3,'0')}
+function loadQ(){
+  A('/api/admin/config').then(function(c){hunt=c.qr_hunt_open;$('huntBtn').textContent=hunt==='1'?'🟢 Búsqueda ABIERTA (tocá para cerrar)':'🔴 Búsqueda CERRADA (tocá para abrir)'});
+  A('/api/admin/qr').then(function(l){
+    qrs=l;
+    $('qlist').innerHTML=l.length?l.map(function(q){
+      return '<div class="row"><span><b>'+qc(q.id)+'</b> · '+q.category+(q.claimed_by?' · ✅ '+esc(q.claimed_by):'')+'</span>'+
+        '<input style="flex:2" value="'+esc(q.hint||'')+'" placeholder="Dónde está escondido" onchange="setHint('+q.id+',this.value)"></div>'}).join(''):'Todavía no hay QRs';
+  });
+}
+function genQ(){
+  A('/api/admin/qr/generate',{facil:$('qf').value,medio:$('qm').value,dificil:$('qd').value,extremo:$('qe').value})
+    .then(function(r){alert('Creados: '+r.created);loadQ()});
+}
+function toggleHunt(){A('/api/admin/config',{qr_hunt_open:hunt==='1'?0:1}).then(loadQ)}
+function setHint(id,v){A('/api/admin/qr/'+id+'/hint',{hint:v})}
+function qrCode(tk){
+  return crypto.subtle.digest('SHA-256',new TextEncoder().encode(tk)).then(function(b){
+    return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2)}).join('').slice(0,6).toUpperCase();
+  });
+}
+function printQR(){
+  if(!qrs.length){alert('Primero generá los QRs');return}
+  Promise.all(qrs.map(function(q){return qrCode(q.token)})).then(function(codes){
+    $('qrOut').innerHTML=qrs.map(function(q,i){return '<div class="qc">'+qrSvg(location.origin+'/q/'+q.token,200)+'<div>'+qc(q.id)+'</div><div style="font-size:14px;font-weight:600">Código: '+codes[i]+'</div></div>'}).join('');
+    $('cardsOut').style.display='none';$('qrOut').style.display='grid';
+    window.onafterprint=function(){$('qrOut').style.display='none';$('cardsOut').style.display=''};
+    window.print();
+  });
+}
+function csvQ(){
+  var q=function(s){return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'};
+  var rows=[['id','codigo','categoria','ubicacion','reclamado_por','reclamado_en']].concat(qrs.map(function(x){return [x.id,qc(x.id),x.category,x.hint,x.claimed_by,x.claimed_at]}));
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(function(r){return r.map(q).join(',')}).join('\n')],{type:'text/csv'}));
+  a.download='qrs.csv';a.click();
+}
+function adj(id){
+  var d=prompt('¿Cuántas fichas? (negativo para restar)');if(!d)return;
+  var n=prompt('Motivo / nota')||'';
+  A('/api/admin/adjust',{user_id:id,delta:d,note:n}).then(load);
+}
+function rp(id,name){
+  if(!confirm('¿Generar PIN nuevo para '+name+'?'))return;
+  A('/api/admin/users/'+id+'/resetpin',{}).then(function(r){cards([{name:name,pin:r.pin}]);alert('PIN nuevo de '+name+': '+r.pin)});
+}
+function saveCfg(){
+  var o={};document.querySelectorAll('[data-k]').forEach(function(i){o[i.dataset.k]=i.value});
+  A('/api/admin/config',o).then(function(){alert('Guardado')});
+}
+function exp(){
+  A('/api/admin/export').then(function(j){
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(j,null,1)],{type:'application/json'}));
+    a.download='elifest22-respaldo.json';a.click();
+  });
+}
+</script></body></html>

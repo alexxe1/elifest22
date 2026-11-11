@@ -1,0 +1,23 @@
+# Dependencias y archivos locales de Cloudflare
+node_modules/
+.wrangler/
+.dev.vars
+.env
+*.log
+
+# Datos reales del evento (nombres, PINs, fotos): NUNCA al repositorio
+respaldo*.json
+elifest22-respaldo*.json
+*.csv
+qrs.csv
+tarjetas*
+pins*
+
+# Logos oficiales de los clubes: son marcas registradas. Quedan fuera del repo (el LEEME.txt sí se sube)
+public/logos/*.png
+public/logos/*.svg
+public/logos/*.webp
+
+# Sistema
+.DS_Store
+Thumbs.db

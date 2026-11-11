@@ -1,0 +1,108 @@
+/* ELIFEST 22 - estilos compartidos (celu, QR, admin). Un solo archivo cacheado por el navegador. */
+:root{--bg:#0f0f17;--bg2:#161622;--card:#1c1c2b;--card2:#26263b;--line:#2f2f48;--tx:#f4f4fa;--mut:#9a9ab4;
+  --ac:#ffb830;--ac2:#ff8a3d;--ok:#4be39a;--err:#ff6b6b;--vio:#a78bfa;--r:16px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{margin:0 auto;max-width:560px;min-height:100vh;padding:14px 14px 96px;color:var(--tx);
+  font:17px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:radial-gradient(120% 50% at 50% -8%,#2b2147 0%,transparent 62%),var(--bg)}
+h1,h2{margin:.2em 0 .4em;line-height:1.2}
+small{font-size:.8em}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0;box-shadow:0 6px 18px #0005}
+.hero{text-align:center;background:linear-gradient(160deg,#2a2347,var(--card) 70%)}
+.hero-t{font-size:34px;font-weight:900;text-align:center;margin:20px 0 6px;letter-spacing:.5px;
+  background:linear-gradient(90deg,var(--ac),var(--vio));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hint{color:var(--mut);font-size:14px;margin:4px 0 6px}
+.err{color:var(--err);min-height:1.3em;font-size:15px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.up{color:var(--ok);font-weight:800}.dn{color:var(--err);font-weight:800}
+/* controles */
+button,.btn{display:block;width:100%;margin:8px 0;padding:14px;border:0;border-radius:14px;cursor:pointer;text-align:center;
+  font:inherit;font-weight:800;color:#1a1200;background:linear-gradient(180deg,var(--ac),var(--ac2));
+  box-shadow:0 3px 0 #b3651f;transition:transform .08s,box-shadow .08s,filter .15s,opacity .15s}
+button:active,.btn:active{transform:translateY(2px) scale(.985);box-shadow:0 1px 0 #b3651f;filter:brightness(.93)}
+button.sec{background:var(--card2);color:var(--tx);border:1px solid var(--line);box-shadow:none}
+button:disabled{opacity:.6;cursor:default}
+select,input,textarea{display:block;width:100%;margin:6px 0;padding:13px;font:inherit;color:var(--tx);
+  background:var(--bg2);border:1px solid var(--line);border-radius:12px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ac);border-color:transparent}
+/* estado "cargando" de un botón */
+.busy{position:relative;color:transparent!important;pointer-events:none}
+.busy::after{content:"";position:absolute;left:50%;top:50%;width:1.15em;height:1.15em;margin:-.6em 0 0 -.6em;
+  border:3px solid #0003;border-top-color:#1a1200;border-radius:50%;animation:spin .7s linear infinite}
+button.sec.busy::after{border-color:#fff3;border-top-color:#fff}
+.spin{display:inline-block;width:1em;height:1em;border:3px solid var(--line);border-top-color:var(--ac);border-radius:50%;
+  animation:spin .7s linear infinite;vertical-align:-.15em}
+#bar{position:fixed;top:0;left:0;height:3px;width:0;opacity:0;z-index:50;background:linear-gradient(90deg,var(--ac),var(--vio))}
+#bar.on{opacity:1;width:75%;transition:width 6s cubic-bezier(.1,.7,.2,1)}
+#bar.done{opacity:0;width:100%;transition:width .15s,opacity .4s .15s}
+#toast{position:fixed;left:50%;bottom:24px;z-index:60;max-width:92vw;padding:12px 20px;border-radius:999px;font-weight:700;text-align:center;
+  background:var(--card2);border:1px solid var(--line);box-shadow:0 8px 26px #000a;opacity:0;transform:translate(-50%,30px);
+  transition:transform .25s,opacity .25s;pointer-events:none}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.ok{background:#12301f;border-color:var(--ok);color:var(--ok)}
+#toast.err{background:#351919;border-color:var(--err);color:#ffc0c0}
+body.offline::before{content:"📡 Sin conexión… reintentando";position:fixed;top:0;left:0;right:0;z-index:55;padding:5px;text-align:center;
+  font-size:13px;font-weight:700;background:var(--err);color:#fff}
+.sk{height:92px;margin:12px 0;border-radius:var(--r);
+  background:linear-gradient(90deg,var(--card) 25%,var(--card2) 37%,var(--card) 63%);background-size:400% 100%;animation:shim 1.4s infinite}
+/* animaciones */
+.fade{animation:fade .28s ease-out}
+.pop{animation:pop .55s cubic-bezier(.2,1.6,.4,1)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shim{0%{background-position:100% 0}100%{background-position:0 0}}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes pulse{50%{opacity:.55;transform:scale(1.06)}}
+.urgent{color:var(--err)!important;animation:pulse .6s infinite}
+/* pestañas */
+.tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;margin:0 -14px;padding:10px 14px;background:var(--bg);scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{position:relative;flex:1 0 auto;width:auto;margin:0;padding:9px 11px;font-size:13.5px;white-space:nowrap;border-radius:999px}
+.tabs button.sec{box-shadow:none}
+.tabs .dot{position:absolute;top:2px;right:4px;width:10px;height:10px;border-radius:50%;background:var(--err);border:2px solid var(--bg);animation:pulse 1.2s infinite}
+/* ficha dorada (el emoji de moneda no se ve en todas las PCs) */
+.chip{display:inline-block;width:.9em;height:.9em;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe08a,#ffb830 60%,#c98a00);
+  border:.12em solid #c98a00;box-shadow:inset 0 0 0 .1em #fff5;vertical-align:-.12em}
+.big{font-size:58px;font-weight:900;color:var(--ac);text-align:center;line-height:1.1;text-shadow:0 0 26px #ffb83066}
+/* ranking */
+.rk{display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--line)}
+.rk:last-child{border-bottom:0}
+.rp{width:34px;text-align:center;font-weight:800;color:var(--mut)}
+.rk .nm{flex:1}
+.rk.me{background:#ffb8301c;border-radius:12px;color:var(--ac);font-weight:800}
+/* bracket */
+.bk{display:flex;gap:18px;overflow-x:auto;padding-bottom:8px}
+.rd{min-width:172px;display:flex;flex-direction:column}
+.rt{color:var(--mut);text-align:center;margin-bottom:6px;font-size:14px}
+.rm{display:flex;flex-direction:column;justify-content:space-around;flex:1;gap:12px}
+.bm{background:var(--card2);border:2px solid var(--card2);border-radius:12px;padding:7px 9px;font-size:15px}
+.bm.cur{border-color:var(--ac);box-shadow:0 0 14px #ffb83044}
+.bp{display:flex;justify-content:space-between;gap:6px;padding:3px 0}
+.bp.w{color:var(--ac);font-weight:800}.bs{font-size:12px;color:var(--mut)}
+/* apuestas */
+.pk{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.pk>div{background:var(--card);border:3px solid var(--card);border-radius:var(--r);padding:12px;text-align:center;transition:border-color .15s,transform .1s}
+.pk>div:active{transform:scale(.98)}.pk>div.sel{border-color:var(--ac);box-shadow:0 0 16px #ffb83044}
+.mu{font-size:30px;font-weight:900;color:var(--ac)}
+.amt{display:flex;gap:8px;align-items:center}.amt button{width:auto;flex:0 0 auto;margin:0;padding:12px 18px}
+.amt .big{flex:1;font-size:42px}
+/* foto-retos */
+.btn{margin-top:12px}
+.pg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.ph{position:relative;background:var(--card);border:3px solid var(--card);border-radius:var(--r);padding:6px}
+.ph.sel{border-color:var(--ac)}
+.ph img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:11px;background:var(--card2)}
+.ph button{margin:6px 0 0;padding:9px}
+.pn{position:absolute;top:10px;left:10px;padding:2px 9px;border-radius:9px;background:#000a;font-weight:900}
+.sm{text-align:center;color:var(--mut);padding:9px}
+/* foto en grande */
+#lb{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;gap:10px;padding:12px;background:#07070dF2;animation:fade .2s}
+#lb .lb-top{display:flex;justify-content:space-between;align-items:center;font-size:22px}
+#lb .lb-top button{width:auto;margin:0;padding:9px 16px}
+#lb img{flex:1;min-height:0;width:100%;object-fit:contain;border-radius:12px}
+#lb>button{flex:0 0 auto}
+.ph img{cursor:zoom-in}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

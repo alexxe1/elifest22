@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELIFEST 22 · TV</title>
+<style>
+:root{--bg:#0e0e16;--card:#1e1e2b;--tx:#f2f2f7;--mut:#9a9ab0;--ac:#ffb830}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:3vh/1.3 system-ui,sans-serif;overflow:hidden;display:flex;flex-direction:column}
+#head{padding:2vh 3vw 0;display:flex;justify-content:space-between;font-size:3.4vh;color:var(--mut)}
+#main{flex:1;padding:1.5vh 3vw;overflow:hidden;animation:fade .6s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+#foot{padding:1.6vh 3vw;background:var(--card);font-size:3vh;text-align:center}
+h1{font-size:6vh;margin:0 0 1.5vh}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 4vw}
+.rk{display:flex;justify-content:space-between;padding:.7vh 0;border-bottom:1px solid #2a2a3a;font-size:3.6vh}
+.rk.top{color:var(--ac);font-weight:800}
+.chip{display:inline-block;width:.9em;height:.9em;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe08a,#ffb830 60%,#c98a00);border:.12em solid #c98a00;box-shadow:inset 0 0 0 .1em rgba(255,255,255,.35);vertical-align:-.12em}
+.bk{display:flex;gap:2.5vw;height:70vh}
+.rd{flex:1;display:flex;flex-direction:column;min-width:0}
+.rt{color:var(--mut);text-align:center;font-size:3vh;margin-bottom:1vh}
+.rm{display:flex;flex-direction:column;justify-content:space-around;flex:1;gap:1.2vh}
+.bm{background:#2a2a3a;border:.4vh solid #2a2a3a;border-radius:1.4vh;padding:1vh 1.2vw;font-size:2.9vh}
+.bm.cur{border-color:var(--ac)}
+.bp{display:flex;justify-content:space-between;gap:1vw;padding:.3vh 0}
+.bp.w{color:var(--ac);font-weight:800}.bs{font-size:2.2vh;color:var(--mut)}
+.champ{font-size:5vh;color:var(--ac);font-weight:800;margin-bottom:1vh}
+.bk.sm2 .bm{font-size:1.75vh;padding:.3vh .8vw;border-width:.25vh;border-radius:.8vh}.bk.sm2 .bp{padding:0}.bk.sm2 .bs{display:none}.bk.sm2 .rm{gap:.5vh}.bk.sm2 .rt{font-size:2.2vh;margin-bottom:.4vh}
+/* sorteo */
+.stage{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center}
+.slots{display:flex;align-items:center;gap:3vw;margin-top:4vh}
+.slot{min-width:34vw;padding:4vh 2vw;border-radius:2vh;background:var(--card);border:.5vh solid #2a2a3a;font-size:5vh;font-weight:800}
+.slot.locked{border-color:var(--ac);color:var(--ac)}
+.slot small{display:block;font-size:3vh;color:var(--tx);font-weight:400}
+.t-sm{font-size:3.6vh;color:var(--mut)}.mission{font-size:7vh;font-weight:900;margin:3vh 4vw;max-width:85vw}.pbig{font-size:22vh;font-weight:900;color:var(--ac);line-height:1;margin-bottom:2vh}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(10vw,1fr));gap:1vh 1vw}.gi{position:relative}.gi img{width:100%;height:100%;object-fit:cover;border-radius:1vh;display:block}
+.gi span{position:absolute;top:.5vh;left:.5vw;background:#000b;padding:0 .7vw;border-radius:.8vh;font-weight:900;font-size:3vh}
+.pod{display:flex;gap:3vw;justify-content:center;align-items:flex-end}.pi{text-align:center;font-size:3.6vh}
+.pi img{height:42vh;max-width:30vw;object-fit:cover;border-radius:1.5vh;border:.6vh solid #2a2a3a}.pi.win img{height:54vh;max-width:42vw;border-color:var(--ac)}
+/* apuestas */
+#over{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#b3261e;z-index:9;animation:pulse 1s infinite}
+#over.last{animation:pulse .35s infinite}
+@keyframes pulse{50%{background:#ff6a00}}
+#over .t1{font-size:8vh;font-weight:900}#over .huge{font-size:34vh;font-weight:900;line-height:1}#over .t2{font-size:5vh}
+</style><script src="/teams.js"></script></head><body>
+<div id="head"><span>🎉 ELIFEST 22</span><span id="clock"></span></div>
+<div id="main"></div>
+<div id="foot">Esperando…</div>
+<div id="over"></div>
+<script>
+var $=function(i){return document.getElementById(i)};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+var CHIP='<span class="chip"></span>';
+var ph=null,phEnd=0,startEnd=0,rk=[],tn=[],bt=null,end=0,ver=-1,cur=0,animating=false,seen=null;
+
+function nm(t,id){
+  if(id==null)return '?';
+  var p=t.players.filter(function(x){return x.id===id})[0];
+  return p?esc(p.name)+(p.team?' '+teamTag(p.team):''):'?';
+}
+function bracket(t){
+  var R=Math.max.apply(null,t.matches.map(function(x){return x.round}));
+  var n1=t.matches.filter(function(x){return x.round===1}).length;var h='<div class="bk'+(n1>=5?' sm2':'')+'">';
+  for(var r=1;r<=R;r++){
+    h+='<div class="rd"><div class="rt">'+(r===R?'Final':(r===R-1?'Semifinal':(r===R-2?'Cuartos':(r===R-3?'Octavos':'Ronda '+r))))+'</div><div class="rm">';
+    t.matches.filter(function(x){return x.round===r}).forEach(function(x){
+      var done=x.status==='confirmed',bye=done&&x.player_b==null;
+      var side=function(id,sc){
+        var w=done&&x.winner===id&&id!=null;
+        var name=id==null?'<i style="color:var(--mut)">'+(bye?'BYE':'por definir')+'</i>':nm(t,id);
+        return '<div class="bp'+(w?' w':'')+'"><span>'+name+'</span><b>'+(sc!=null?sc:'')+'</b></div>';
+      };
+      var st=bye?'pasa directo':(x.status==='reported'?'por confirmar':(x.status==='disputed'?'en disputa':(x.id===t.current_match_id?'▶ en juego':'')));
+      h+='<div class="bm'+(x.id===t.current_match_id?' cur':'')+'">'+side(x.player_a,x.score_a)+side(x.player_b,x.score_b)+(st?'<div class="bs">'+st+'</div>':'')+'</div>';
+    });
+    h+='</div></div>';
+  }
+  return h+'</div>';
+}
+function screens(){var s=['rank'];tn.forEach(function(t){s.push(t.id)});return s}
+
+function show(){
+  if(animating)return;
+  if(photoActive()){showPhoto();return}
+  var sc=screens();if(cur>=sc.length)cur=0;
+  var w=sc[cur],h='';
+  if(w==='rank'){
+    h='<h1>🏆 Ranking</h1><div class="cols">'+rk.slice(0,26).map(function(r,i){
+      return '<div class="rk'+(i<3?' top':'')+'"><span>'+(i+1)+'. '+esc(r.name)+'</span><span>'+r.chips+' '+CHIP+'</span></div>'}).join('')+'</div>';
+  }else{
+    var t=tn.filter(function(z){return z.id===w})[0];if(!t)return;
+    var R=Math.max.apply(null,t.matches.map(function(x){return x.round}));
+    var fin=t.matches.filter(function(x){return x.round===R})[0];
+    h='<h1>'+esc(t.name)+'</h1>'+(t.status==='finished'&&fin&&fin.winner?'<div class="champ">🏆 Campeón: '+nm(t,fin.winner)+'</div>':'')+bracket(t);
+  }
+  $('main').innerHTML=h;
+}
+
+// Sorteo en vivo: revela con efecto "tragamonedas" el resultado REAL que ya sorteó el servidor.
+async function roll(el,names,finalHtml,dur){
+  var t0=Date.now();
+  while(Date.now()-t0<dur){el.textContent=names[Math.floor(Math.random()*names.length)];await sleep(70)}
+  el.innerHTML=finalHtml;el.classList.add('locked');
+}
+async function drawAnim(t){
+  animating=true;
+  var names=t.players.map(function(p){return p.name});
+  var ms=t.matches.filter(function(x){return x.round===1});
+  var fin=function(id){
+    var p=t.players.filter(function(x){return x.id===id})[0];
+    return id==null?'BYE':esc(p.name)+(p.team?'<small>'+teamTag(p.team)+'</small>':'');
+  };
+  for(var i=0;i<ms.length;i++){
+    $('main').innerHTML='<div class="stage"><h1>🎲 SORTEO · '+esc(t.name)+'</h1><div style="color:var(--mut);font-size:4vh">Partido '+(i+1)+' de '+ms.length+'</div>'+
+      '<div class="slots"><div class="slot" id="sA">?</div><div style="font-size:5vh">vs</div><div class="slot" id="sB">?</div></div></div>';
+    await roll($('sA'),names,fin(ms[i].player_a),1800);
+    await roll($('sB'),names,ms[i].player_b==null?'BYE':fin(ms[i].player_b),1800);
+    await sleep(1400);
+  }
+  await sleep(800);
+  animating=false;
+  cur=screens().indexOf(t.id);if(cur<0)cur=0;
+  show();
+}
+
+function cdo(){var s=Math.max(0,Math.round((startEnd-Date.now())/1000));return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+
+function fmtP(){var s=Math.max(0,Math.round((phEnd-Date.now())/1000));return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+var phAt=0,phPage=0,phTickN=0;
+function sinceEnd(){var c=ph&&ph.challenge;return c?(c.since_end||0)+(Date.now()-phAt)/1000:0}
+function photoActive(){var c=ph&&ph.challenge;return !!c&&(c.status==='collecting'||c.status==='voting'||(c.status==='finished'&&sinceEnd()<40))}
+// Elige filas/columnas para que las fotos (cuadradas) queden lo más grandes posible dentro de la pantalla
+function bestGrid(n){
+  var W=innerWidth*0.94,H=innerHeight*0.64,g=12,best={c:1,t:0};
+  for(var c=1;c<=n;c++){var r=Math.ceil(n/c),tl=Math.min((W-g*(c-1))/c,(H-g*(r-1))/r);if(tl>best.t)best={c:c,t:tl}}
+  return best;
+}
+function galHtml(list){
+  var b=bestGrid(list.length),t=Math.floor(b.t);
+  return '<div class="gal" style="grid-template-columns:repeat('+b.c+','+t+'px);justify-content:center">'+
+    list.map(function(x){return '<div class="gi" style="width:'+t+'px;height:'+t+'px"><span>#'+x.n+'</span><img src="/api/photo/img/'+x.id+'"></div>'}).join('')+'</div>';
+}
+function showPhoto(){
+  var c=ph.challenge,h='';
+  if(c.status==='collecting'){
+    h='<div class="stage"><div class="t-sm">📸 FOTO-RETO</div><div class="mission">«'+esc(c.mission)+'»</div><div class="pbig" id="pbig">'+fmtP()+'</div>'+
+      '<div class="t-sm">Subí tu foto desde el celu → pestaña 📸 Retos · +'+ph.part+' '+CHIP+' por participar · la más votada gana '+ph.prize+' '+CHIP+'</div></div>';
+  }else if(c.status==='voting'){
+    var all=ph.photos||[],per=8,pages=Math.ceil(all.length/per),list=all,ind='';
+    if(all.length>12){      // muchas fotos: se muestran de a 8 bien grandes y van pasando como un carrusel
+      phPage=phPage%pages;list=all.slice(phPage*per,phPage*per+per);
+      ind='<div class="t-sm" style="text-align:center;margin-top:1.2vh">Fotos '+(phPage*per+1)+'–'+(phPage*per+list.length)+' de '+all.length+' · van pasando</div>';
+    }
+    h='<h1>🗳️ ¡A VOTAR! <span id="pbig" style="color:var(--ac)">'+fmtP()+'</span></h1><div style="margin-bottom:1vh">«'+esc(c.mission)+'» · votá desde tu celu por el número de tu favorita</div>'+galHtml(list)+ind;
+  }else{
+    h='<h1>🏆 ¡Resultado del foto-reto!</h1><div style="margin-bottom:1.5vh">«'+esc(c.mission)+'»</div><div class="pod">'+
+      (ph.results||[]).slice(0,3).map(function(r){return '<div class="pi'+(r.winner?' win':'')+'"><img src="/api/photo/img/'+r.id+'"><div>'+(r.winner?'🏆 ':'')+esc(r.name)+'</div><b>'+r.votes+' votos</b></div>'}).join('')+'</div>';
+  }
+  $('main').innerHTML=h;
+}
+function cd(){var s=Math.max(0,Math.round((end-Date.now())/1000));return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+function over(){
+  var o=$('over');
+  if(!bt||!bt.match||!bt.betting||animating){o.style.display='none';return}
+  var mt=bt.match;
+  o.style.display='flex';
+  o.className=(Math.round((end-Date.now())/1000)<=10)?'last':'';
+  o.innerHTML='<div class="t1">🎲 ¡HAGAN SUS APUESTAS!</div><div class="huge" id="big">'+cd()+'</div>'+
+    '<div class="t2">'+esc(mt.a.name)+' vs '+esc(mt.b.name)+'</div>'+
+    '<div class="t2" style="margin-top:3vh">'+esc(mt.a.name)+': '+mt.a.chips+' '+CHIP+(mt.a.mult?' (x'+mt.a.mult.toFixed(2)+')':'')+
+    ' &nbsp;·&nbsp; '+esc(mt.b.name)+': '+mt.b.chips+' '+CHIP+(mt.b.mult?' (x'+mt.b.mult.toFixed(2)+')':'')+'</div>'+
+    '<div class="t2" style="margin-top:3vh;opacity:.9">Desde tu celu → 🎲 Apostar</div>';
+}
+function foot(){
+  var f=$('foot');
+  if(bt&&bt.match&&bt.cooldown)f.innerHTML='⏳ Próximo: <b>'+esc(bt.match.a.name)+'</b> vs <b>'+esc(bt.match.b.name)+'</b> · las apuestas abren en <b>'+cdo()+'</b>';
+  else if(bt&&bt.match&&bt.match.status==='reported')f.innerHTML='✋ Falta confirmar el resultado: <b>'+esc(bt.match.a.name)+'</b> vs <b>'+esc(bt.match.b.name)+'</b>';
+  else if(bt&&bt.match&&bt.match.status==='disputed')f.innerHTML='⚠️ Resultado en disputa: <b>'+esc(bt.match.a.name)+'</b> vs <b>'+esc(bt.match.b.name)+'</b>';
+  else if(bt&&bt.match)f.innerHTML='▶ Juegan ahora: <b>'+esc(bt.match.a.name)+'</b> vs <b>'+esc(bt.match.b.name)+'</b>'+(bt.betting?'':' · pozo '+bt.pot+' '+CHIP);
+  else f.textContent='Esperando el próximo partido…';
+}
+
+function loadAll(){
+  fetch('/api/state').then(function(r){return r.json()}).then(function(s){
+    var a=[s.ranking,s.tournaments,s.bets,s.photo||{challenge:null}];
+    rk=a[0];tn=a[1];bt=a[2];ph=a[3];phAt=Date.now();phEnd=Date.now()+((ph.challenge&&ph.challenge.secs_left)||0)*1000;end=Date.now()+(bt.secs_left||0)*1000;startEnd=Date.now()+(bt.starts_in||0)*1000;
+    if(seen===null){seen={};tn.forEach(function(t){seen[t.id]=1})}      // lo que ya existía no se vuelve a sortear
+    else tn.slice().reverse().forEach(function(t){if(!seen[t.id]){seen[t.id]=1;if(!animating)drawAnim(t)}});
+    show();foot();over();
+  }).catch(function(){});
+}
+function poll(){
+  fetch('/api/version').then(function(r){return r.json()}).then(function(j){if(j.v!==ver){ver=j.v;loadAll()}}).catch(function(){});
+}
+setInterval(function(){
+  var d=new Date();$('clock').textContent=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+  var pb=$('pbig');if(pb)pb.textContent=fmtP();
+  if(ph&&ph.challenge){
+    if(ph.challenge.status==='finished'&&!ph.done&&sinceEnd()>=40){ph.done=true;show()}          // vuelve a rotar ranking y brackets
+    if(ph.challenge.status==='voting'&&(ph.photos||[]).length>12&&++phTickN%12===0){phPage++;show()}   // carrusel cada ~6 s
+  }
+  if(ph&&ph.challenge&&(ph.challenge.status==='collecting'||ph.challenge.status==='voting')&&Date.now()>=phEnd&&!ph.nudged){ph.nudged=true;fetch('/api/version').then(function(){setTimeout(loadAll,900)})}
+  if(bt&&bt.cooldown){foot();if(Date.now()>=startEnd){bt.cooldown=false;fetch('/api/version').then(loadAll)}}
+  if(bt&&bt.betting){
+    if(Date.now()>=end){bt.betting=false;loadAll()}
+    else{var b=$('big');if(b){b.textContent=cd();$('over').className=(Math.round((end-Date.now())/1000)<=10)?'last':''}else over()}
+  }
+},500);
+setInterval(function(){if(!animating&&!(bt&&bt.betting)){cur++;show()}},12000);   // rotación
+setInterval(function(){fetch('/api/bets/current').then(function(r){return r.json()}).then(function(j){bt=j;end=Date.now()+(j.secs_left||0)*1000;startEnd=Date.now()+(j.starts_in||0)*1000;foot();over()}).catch(function(){})},6000);
+poll();setInterval(poll,2500);
+</script></body></html>

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f0f17">
+<title>ELIFEST 22 🎉</title>
+<link rel="stylesheet" href="/ui.css">
+<script src="/session.js"></script><script src="/teams.js"></script><script src="/ui.js"></script>
+</head><body>
+<div id="app"></div>
+<script>
+var $=function(s){return document.querySelector(s)};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function mmss(ms){var s=Math.max(0,Math.round(ms/1000));return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+var CHIP='<span class="chip"></span>';
+var SKEL='<div class="sk"></div><div class="sk" style="height:150px"></div><div class="sk"></div>';
+var token=Sess.get(),tab='home',ver=-1,pollT=null,tickT=null,lastSig='',lastChips=null,fadeNext=false,popNext=false;
+var S=null,bet=null,ph=null,betEnd=0,startEnd=0,phEnd=0,phV=0,uploading=false,betAmt=1,betPick=null,betMatchId=null,ttab='mine';
+
+/* ---------- red ---------- */
+function api(path,opt){
+  opt=opt||{};var h=opt.headers||{};if(token)h.authorization='Bearer '+token;opt.headers=h;
+  var ub=UI.begin();
+  return fetch(path,opt).then(function(r){
+    return r.json().then(function(j){j._s=r.status;UI.end(ub);return j});
+  }).catch(function(e){UI.end(ub);if(ub)toast('Sin conexión. Probá de nuevo.','err');throw e});
+}
+function post(path,body){return api(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})}
+
+/* ---------- login ---------- */
+function loginView(){
+  $('#app').innerHTML='<div class="hero-t">🎉 ELIFEST 22</div>'+SKEL;
+  fetch('/api/names').then(function(r){return r.json()}).then(function(names){
+    $('#app').innerHTML='<div class="hero-t">🎉 ELIFEST 22</div><div class="card fade"><h2>Entrá</h2>'+
+      '<select id="u"><option value="">Elegí tu nombre…</option>'+names.map(function(n){return '<option value="'+n.id+'">'+esc(n.name)+'</option>'}).join('')+'</select>'+
+      '<input id="pin" type="tel" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="PIN (4 dígitos)">'+
+      '<div class="hint">Tu PIN es personal: no lo compartas ni lo muestres.</div><div class="err" id="err"></div><button id="go">Entrar</button></div>';
+    $('#u').onchange=function(){$('#pin').focus()};
+    $('#pin').oninput=function(){if(this.value.length===4&&$('#u').value)$('#go').click()};
+    $('#go').onclick=function(){
+      var id=$('#u').value,pin=$('#pin').value;
+      if(!id||pin.length!==4){$('#err').textContent='Elegí tu nombre y poné el PIN';return}
+      $('#err').textContent='';
+      post('/api/login',{user_id:Number(id),pin:pin}).then(function(r){
+        if(r.token){token=r.token;if(!Sess.set(token))toast(SESS_WARN,'err',7000);toast('¡Bienvenido, '+r.name+'!','ok');start()}
+        else{$('#err').textContent=r.error||'Error';toast(r.error||'Error','err',4000);$('#pin').value=''}
+      }).catch(function(){});
+    };
+  }).catch(function(){$('#app').innerHTML='<div class="card">No pude cargar la lista. <button onclick="loginView()">Reintentar</button></div>'});
+}
+function askLogout(){if(confirm('¿Cerrar sesión en este celu? Para volver a entrar vas a necesitar tu PIN.'))logout()}
+function logout(){var tk=token;if(tk)fetch('/api/logout',{method:'POST',headers:{authorization:'Bearer '+tk}}).catch(function(){});   // libera el lugar de este celu
+  token=null;Sess.clear();S=null;bet=null;ph=null;lastChips=null;lastSig='';clearInterval(pollT);clearInterval(tickT);ver=-1;loginView()}
+
+/* ---------- datos: UN solo pedido (/api/state) y solo se redibuja si algo cambió ---------- */
+function render(force){
+  if(!token)return;
+  var ae=document.activeElement;if(ae&&ae.tagName==='INPUT'&&ae.type!=='file')return;   // no pisar lo que están escribiendo
+  api('/api/state').then(function(s){
+    if(!s.me||!s.me.id){if(s.me&&s.me.error==='Sesión vencida')logout();return}
+    S=s;bet=s.bets||{match:null};ph=s.photo||{challenge:null};
+    betEnd=Date.now()+(bet.secs_left||0)*1000;startEnd=Date.now()+(bet.starts_in||0)*1000;
+    phEnd=Date.now()+((ph.challenge&&ph.challenge.secs_left)||0)*1000;
+    var c=s.me.chips;
+    if(lastChips!==null&&c!==lastChips){if(c>lastChips)toast('+'+(c-lastChips)+' fichas 🎉','ok');popNext=true}   // solo se festeja cuando suben
+    lastChips=c;
+    var sig=JSON.stringify(s,function(k,v){return(k==='secs_left'||k==='starts_in'||k==='since_end')?0:v});
+    if(!force&&sig===lastSig)return;
+    lastSig=sig;draw();
+  }).catch(function(){});
+}
+function setTab(t){if(t!=='qr')qrRes=null;tab=t;fadeNext=true;draw()}                 // instantáneo: usa los datos que ya están en memoria
+
+/* ---------- dibujo ---------- */
+function mounted(){if(!$('#view'))$('#app').innerHTML='<div class="tabs" id="tabs"></div><div id="banner"></div><div id="view"></div>'}
+function dots(m){
+  var d={};
+  if(bet.match&&bet.betting&&!bet.is_player&&!bet.my_bet)d.bet=1;
+  var c=ph.challenge;
+  if(c&&((c.status==='collecting'&&!ph.my_photo)||(c.status==='voting'&&!ph.my_vote)))d.photo=1;
+  if(S.qr&&S.qr.open&&!S.qr.claimed)d.qr=1;
+  S.tournaments.forEach(function(t){t.matches.forEach(function(x){
+    if(x.player_a!==m.id&&x.player_b!==m.id)return;
+    if((x.status==='reported'&&x.reported_by!==m.id)||(x.status==='open'&&x.id===t.current_match_id&&!bet.betting&&!bet.cooldown))d.torn=1;
+  })});
+  return d;
+}
+function draw(){
+  if(!S||!S.me||!S.me.id)return;
+  mounted();
+  var m=S.me,dt=dots(m);
+  var tabs=[['home','Inicio'],['torn','Torneos'],['bet','🎲 Apostar'],['photo','📸 Retos'],['rank','Ranking']];
+  var qOpen=!!(S.qr&&S.qr.open);
+  if(qOpen)tabs.splice(4,0,['qr','🔎 QR']);else if(tab==='qr')tab='home';
+  $('#tabs').innerHTML=tabs.map(function(t){
+    return '<button class="'+(tab===t[0]?'':'sec')+'" onclick="setTab(\''+t[0]+'\')">'+t[1]+((dt[t[0]==='torn'?'torn':t[0]])&&tab!==t[0]?'<span class="dot"></span>':'')+'</button>'}).join('');
+  $('#banner').innerHTML=betBanner()+photoBanner();
+  var body=tab==='home'?homeView(m):tab==='torn'?tournView(m):tab==='bet'?betView():tab==='photo'?photoView():tab==='qr'?qrView():rankView(m);
+  $('#view').innerHTML='<div class="'+(fadeNext?'fade':'')+'">'+body+'</div>';
+  fadeNext=false;popNext=false;
+}
+function homeView(m){
+  var pos=0;S.ranking.forEach(function(r,i){if(r.id===m.id)pos=i+1});
+  var h='<div class="card hero"><div class="mut">Hola, <b style="color:var(--tx)">'+esc(m.name)+'</b> 👋</div><div class="big'+(popNext?' pop':'')+'">'+m.chips+' '+CHIP+'</div>'+
+    (pos?'<div class="mut">Vas en el puesto <b style="color:var(--tx)">'+pos+'º</b> de '+S.ranking.length+'</div>':'')+'</div>';
+  h+='<div class="card"><h2>Últimos movimientos</h2>'+(m.moves.map(function(x){
+    return '<div class="row"><span>'+esc(x.note||x.reason)+'</span><span class="'+(x.delta>0?'up':'dn')+'">'+(x.delta>0?'+':'')+x.delta+'</span></div>'}).join('')||'<div class="mut">Nada todavía</div>')+'</div>';
+  return h+'<button class="sec" onclick="askLogout()">Salir</button>';
+}
+function rankView(m){
+  var med=['🥇','🥈','🥉'];
+  return '<div class="card"><h2>Ranking</h2>'+S.ranking.map(function(r,i){
+    return '<div class="rk'+(r.id===m.id?' me':'')+'"><span class="rp">'+(med[i]||(i+1))+'</span><span class="nm">'+esc(r.name)+'</span><span>'+r.chips+' '+CHIP+'</span></div>'}).join('')+'</div>';
+}
+
+/* ---------- torneos ---------- */
+function nm(t,id){
+  if(id==null)return '?';
+  var p=t.players.filter(function(x){return x.id===id})[0];
+  return p?esc(p.name)+(p.team?' '+teamTag(p.team):''):'?';
+}
+function unit(t){return t.game==='Piedra, papel o tijera'?'Victorias':(t.best_of>1?'Games':'Goles')}
+function sendRep(id,sa,sb){
+  post('/api/matches/'+id+'/report',{score_a:sa,score_b:sb}).then(function(r){
+    if(r.error){toast(r.error,'err',4000)}
+    else if(r.state==='confirmed')toast('✅ Partido confirmado','ok');
+    else if(r.state==='disputed')toast('No coinciden los resultados. Lo resuelve el admin.','err',4500);
+    else toast('Resultado cargado. Falta que confirme tu rival.','ok');
+    render(true);
+  }).catch(function(){});
+}
+function repForm(id){sendRep(id,document.getElementById('sa'+id).value,document.getElementById('sb'+id).value)}
+function myMatch(t,x,me){
+  var h='<div class="card"><b>'+esc(t.name)+'</b><br>'+nm(t,x.player_a)+' vs '+nm(t,x.player_b)+'<br>';
+  var form='<div style="display:flex;gap:8px"><input id="sa'+x.id+'" type="tel" inputmode="numeric" placeholder="'+unit(t)+' A"><input id="sb'+x.id+'" type="tel" inputmode="numeric" placeholder="'+unit(t)+' B"></div>'+
+    '<button onclick="repForm('+x.id+')">Cargar resultado (A - B)</button>';
+  if(x.status==='disputed')h+='<div class="err">Hay desacuerdo. Lo resuelve el admin.</div>';
+  else if(x.status==='reported'&&x.reported_by!==me.id)
+    h+='Tu rival cargó <b>'+x.score_a+' - '+x.score_b+'</b>. ¿Es correcto?<button onclick="sendRep('+x.id+','+x.score_a+','+x.score_b+')">✔ Confirmar</button><div class="mut">Si no, cargá el resultado correcto:</div>'+form;
+  else if(x.status==='reported')h+='Cargaste '+x.score_a+' - '+x.score_b+'. Esperando que confirme tu rival. <span class="spin"></span>'+form;
+  else if(t.current_match_id!==x.id)h+='<div class="mut">⏳ Todavía no es tu turno. Se juega de a un partido; mirá en el bracket cuál está en juego (▶).</div>';
+  else if(bet.cooldown||bet.betting)h+='<div class="mut">🎲 Primero las apuestas. Cuando terminen podés jugar y cargar el resultado.</div>';
+  else h+='<b>🎮 ¡Es tu turno!</b>'+form;
+  return h+'</div>';
+}
+function bracket(t){
+  var R=Math.max.apply(null,t.matches.map(function(x){return x.round}));
+  var h='<div class="bk">';
+  for(var r=1;r<=R;r++){
+    h+='<div class="rd"><div class="rt">'+(r===R?'Final':(r===R-1?'Semifinal':(r===R-2?'Cuartos':(r===R-3?'Octavos':'Ronda '+r))))+'</div><div class="rm">';
+    t.matches.filter(function(x){return x.round===r}).forEach(function(x){
+      var done=x.status==='confirmed',bye=done&&x.player_b==null;
+      var side=function(id,sc){
+        var w=done&&x.winner===id&&id!=null;
+        var name=id==null?'<i class="mut">'+(bye?'BYE':'por definir')+'</i>':nm(t,id);
+        return '<div class="bp'+(w?' w':'')+'"><span>'+name+'</span><b>'+(sc!=null?sc:'')+'</b></div>';
+      };
+      var st=bye?'pasa directo':(x.status==='reported'?'por confirmar':(x.status==='disputed'?'en disputa':(x.id===t.current_match_id?'▶ en juego':'')));
+      h+='<div class="bm'+(x.id===t.current_match_id?' cur':'')+'">'+side(x.player_a,x.score_a)+side(x.player_b,x.score_b)+(st?'<div class="bs">'+st+'</div>':'')+'</div>';
+    });
+    h+='</div></div>';
+  }
+  return h+'</div>';
+}
+function setTT(v){ttab=v;fadeNext=true;draw()}
+function tournView(m){
+  var tn=S.tournaments;
+  if(!tn.length)return '<div class="card">Todavía no hay torneos.</div>';
+  if(ttab!=='mine'&&!tn.some(function(t){return String(t.id)===String(ttab)}))ttab='mine';
+  var h='<div class="tabs" style="position:static;padding:0 0 8px;margin:0;flex-wrap:wrap"><button class="'+(ttab==='mine'?'':'sec')+'" onclick="setTT(\'mine\')">🎮 Mis partidos</button>';
+  tn.forEach(function(t){h+='<button class="'+(String(ttab)===String(t.id)?'':'sec')+'" onclick="setTT('+t.id+')">'+esc(t.name)+'</button>'});
+  h+='</div>';
+  if(ttab==='mine'){
+    var any=false,cur=null;
+    tn.forEach(function(t){
+      t.matches.forEach(function(x){if(x.id===t.current_match_id)cur={t:t,x:x}});
+      t.matches.filter(function(x){return (x.player_a===m.id||x.player_b===m.id)&&['open','reported','disputed'].indexOf(x.status)>=0})
+        .forEach(function(x){any=true;h+=myMatch(t,x,m)});
+    });
+    if(!any)h+='<div class="card mut">No tenés partidos pendientes por ahora.</div>';
+    if(cur)h+='<div class="card"><span class="mut">▶ En juego ahora</span><br>'+nm(cur.t,cur.x.player_a)+' vs '+nm(cur.t,cur.x.player_b)+'</div>';
+    return h;
+  }
+  var t=tn.filter(function(z){return String(z.id)===String(ttab)})[0];
+  var R=Math.max.apply(null,t.matches.map(function(x){return x.round}));
+  var fin=t.matches.filter(function(x){return x.round===R})[0];
+  h+='<div class="card"><h2>'+esc(t.name)+'</h2>';
+  if(t.status==='finished'&&fin&&fin.winner)h+='<div class="big pop" style="font-size:28px">🏆 '+nm(t,fin.winner)+'</div>';
+  return h+bracket(t)+'</div>';
+}
+
+/* ---------- apuestas ---------- */
+function betBanner(){
+  if(!bet.match||tab==='bet'||bet.is_player)return '';
+  if(bet.cooldown)return '<div class="card fade">⏳ <b>Próximo partido:</b> '+esc(bet.match.a.name)+' vs '+esc(bet.match.b.name)+' — apuestas en <b class="cd2">'+mmss(startEnd-Date.now())+'</b></div>';
+  if(bet.betting&&!bet.my_bet)return '<div class="card fade" style="border-color:var(--ac);cursor:pointer" onclick="setTab(\'bet\')">🎲 <b>¡Apuestas abiertas!</b> '+esc(bet.match.a.name)+' vs '+esc(bet.match.b.name)+' — <b class="cd">'+mmss(betEnd-Date.now())+'</b></div>';
+  return '';
+}
+function pickBet(id){betPick=id;draw()}
+function amtD(d){var mx=bet.max_bet||1;betAmt=Math.min(mx,Math.max(1,betAmt+d));document.getElementById('amt').textContent=betAmt}
+function amtMax(){betAmt=bet.max_bet;document.getElementById('amt').textContent=betAmt}
+function doBet(){
+  if(!betPick){toast('Elegí a quién le apostás','err');return}
+  post('/api/bets',{match_id:bet.match.id,pick:betPick,amount:betAmt}).then(function(r){
+    if(r.error)toast(r.error,'err',4000);else toast('🎲 ¡Apuesta hecha! Mucha suerte','ok');
+    render(true);
+  }).catch(function(){});
+}
+function betSide(s,other){
+  var under=s.chips<other.chips,can=bet.betting&&!bet.my_bet&&!bet.is_player;
+  return '<div class="'+(betPick===s.id?'sel':'')+'" '+(can?'onclick="pickBet('+s.id+')"':'')+'>'+
+    (under?'<div style="color:#ff9a5a;font-size:14px;font-weight:700">🔥 Underdog</div>':'')+
+    '<b>'+esc(s.name||'?')+'</b>'+(s.team?'<br>'+teamTag(s.team):'')+
+    '<div class="mu">'+(s.mult?'x'+s.mult.toFixed(2):'¡Sé el 1º!')+'</div>'+
+    '<small class="mut">'+s.chips+' fichas · '+s.bettors+' apuestas</small></div>';
+}
+function betView(){
+  if(!bet.match)return '<div class="card mut">No hay ningún partido para apostar ahora.</div>';
+  if(betMatchId!==bet.match.id){betMatchId=bet.match.id;betPick=null;betAmt=1}
+  if(betAmt>bet.max_bet)betAmt=Math.max(1,bet.max_bet);
+  var mt=bet.match,h='<div class="card" style="text-align:center"><div class="mut">'+esc(mt.tournament)+'</div>'+
+    (bet.cooldown?'<div class="big" style="font-size:44px">⏳ <span class="cd2">'+mmss(startEnd-Date.now())+'</span></div><div>Las apuestas abren en un momento. ¡Preparate!</div>':
+     bet.betting?'<div class="big" style="font-size:44px">⏱️ <span class="cd">'+mmss(betEnd-Date.now())+'</span></div><div>¡Apuestas abiertas!</div>':
+     '<div><b>Apuestas cerradas</b> · '+(mt.status==='reported'?'esperando que se confirme el resultado':mt.status==='disputed'?'resultado en disputa (lo resuelve el admin)':'se está jugando')+'</div>')+
+    '<div class="mut" style="margin-top:6px">Pozo: '+bet.pot+' '+CHIP+' (incluye '+bet.seed+' de bote base)</div></div>'+
+    '<div class="pk">'+betSide(mt.a,mt.b)+betSide(mt.b,mt.a)+'</div>';
+  if(bet.is_player)return h+'<div class="card">Estás jugando este partido: no podés apostar. ¡Ganalo! 💪</div>';
+  if(bet.my_bet){var p=bet.my_bet.pick===mt.a.id?mt.a:mt.b;return h+'<div class="card">✅ Tu apuesta: <b>'+bet.my_bet.amount+' '+CHIP+'</b> a <b>'+esc(p.name)+'</b></div>'}
+  if(bet.cooldown)return h+'<div class="card mut">Todavía no abrieron. Mirá la cuenta regresiva ⬆️</div>';
+  if(!bet.betting)return h+'<div class="card mut">Se cerró el tiempo. La próxima apostá a tiempo 😉</div>';
+  if(bet.max_bet<1)return h+'<div class="card">No tenés fichas para apostar.</div>';
+  return h+'<div class="card"><div class="mut">¿Cuántas fichas? (máx. '+bet.max_bet+')</div>'+
+    '<div class="amt"><button class="sec" onclick="amtD(-1)">−</button><div class="big" id="amt">'+betAmt+'</div><button class="sec" onclick="amtD(1)">+</button><button class="sec" onclick="amtMax()">Máx</button></div>'+
+    '<button onclick="doBet()">🎲 Apostar</button></div>';
+}
+
+/* ---------- foto-retos ---------- */
+function photoBanner(){
+  var c=ph.challenge;if(tab==='photo'||!c)return '';
+  if(c.status==='collecting'&&!ph.my_photo)return '<div class="card fade" style="border-color:var(--vio);cursor:pointer" onclick="setTab(\'photo\')">📸 <b>¡Foto-reto!</b> «'+esc(c.mission)+'» — <b class="cdp">'+mmss(phEnd-Date.now())+'</b></div>';
+  if(c.status==='voting'&&!ph.my_vote)return '<div class="card fade" style="border-color:var(--vio);cursor:pointer" onclick="setTab(\'photo\')">🗳️ <b>¡A votar las fotos!</b> — <b class="cdp">'+mmss(phEnd-Date.now())+'</b></div>';
+  return '';
+}
+function resizeImg(file,max,q,cb){
+  var rd=new FileReader();rd.onerror=function(){cb(1)};
+  rd.onload=function(){
+    var im=new Image();im.onerror=function(){cb(1)};
+    im.onload=function(){
+      var s=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');
+      c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);cb(null,c.toDataURL('image/jpeg',q));
+    };
+    im.src=rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+function upPhoto(inp){
+  var f=inp.files&&inp.files[0];if(!f)return;
+  uploading=true;draw();
+  resizeImg(f,800,0.65,function(err,data){
+    if(err){uploading=false;toast('No pude leer esa foto. Probá con otra.','err');draw();return}
+    post('/api/photo/submit',{data:data}).then(function(r){
+      uploading=false;
+      if(r.error)toast(r.error,'err',4000);else{phV=Date.now();toast('📸 ¡Foto subida!','ok')}
+      render(true);
+    }).catch(function(){uploading=false;draw()});
+  });
+}
+function voteP(id,fromLb){
+  post('/api/photo/vote',{photo_id:id}).then(function(r){
+    if(r.error)toast(r.error,'err',4000);else toast('🗳️ Voto registrado','ok');
+    if(fromLb)closeLb();
+    render(true);
+  }).catch(function(){});
+}
+
+/* ---------- QR dentro de la app ---------- */
+var qrRes=null;
+function qrMsg(r){
+  var cat={facil:'Fácil',medio:'Medio',dificil:'Difícil',extremo:'¡EXTREMO!'};
+  if(r.state==='ok')return '<div class="big pop" style="font-size:64px">🎉</div><h2>¡Lo encontraste!</h2><div class="mut">Categoría</div><div style="font-size:24px;font-weight:800">'+(cat[r.category]||r.category)+'</div><div class="big pop">+'+r.chips+' '+CHIP+'</div>';
+  if(r.state==='closed')return '<h2>⏳ Todavía no empezó</h2>';
+  if(r.state==='already_used')return '<h2>✋ Ya usaste tu QR</h2>';
+  if(r.state==='taken')return '<h2>😅 Ese QR ya fue reclamado</h2><div class="mut">Probá con otro.</div>';
+  return '<h2>🤔 Código no válido</h2><div class="mut">Revisá que esté bien escrito.</div>';
+}
+function claimCode(){
+  var v=(document.getElementById('qrc').value||'').trim();
+  if(v.replace(/[^0-9a-fA-F]/g,'').length!==6){toast('El código tiene 6 caracteres (números y letras de la A a la F)','err',3500);return}
+  post('/api/qr/claim',{code:v}).then(function(r){
+    if(r.error){toast(r.error,'err');return}
+    qrRes=r;if(r.state==='ok')toast('+'+r.chips+' fichas 🎉','ok');
+    draw();render(true);
+  }).catch(function(){});
+}
+function qrView(){
+  var q=S.qr||{};
+  if(qrRes)return '<div class="card hero fade">'+qrMsg(qrRes)+'</div>'+(qrRes.state==='ok'?'':'<button class="sec" onclick="qrRes=null;draw()">Probar con otro código</button>');
+  if(q.claimed)return '<div class="card">✅ Ya usaste tu QR. Cada persona puede reclamar uno solo.</div>';
+  return '<div class="card"><h2>🔎 Búsqueda del tesoro</h2><div class="mut">Escaneá un QR con la cámara. Si se abre en otro navegador, no pasa nada: escribí acá el <b style="color:var(--tx)">código de 6 caracteres</b> que figura debajo del QR.</div>'+
+    '<input id="qrc" maxlength="7" autocomplete="off" autocapitalize="characters" placeholder="A3F09C" style="text-transform:uppercase;letter-spacing:5px;text-align:center;font-size:26px;margin-top:12px" onkeydown="if(event.key===\'Enter\')claimCode()">'+
+    '<button onclick="claimCode()">Reclamar</button></div>';
+}
+
+function closeLb(){var d=document.getElementById('lb');if(d)d.parentNode.removeChild(d)}
+function zoomP(id,n,mine,canVote){
+  closeLb();var d=document.createElement('div');d.id='lb';
+  d.innerHTML='<div class="lb-top"><b>#'+n+'</b><button class="sec" onclick="closeLb()">✕ Cerrar</button></div><img src="/api/photo/img/'+id+'">'+
+    (canVote?(mine?'<div class="sm">Tu foto</div>':'<button onclick="voteP('+id+',true)">'+(ph.my_vote===id?'✅ Tu voto (tocá para confirmar)':'🗳️ Votar esta foto')+'</button>'):'');
+  document.body.appendChild(d);
+}
+function photoView(){
+  var c=ph.challenge;
+  if(!c)return '<div class="card mut">Todavía no hubo ningún foto-reto. Cuando arranque uno te avisamos acá 📸</div>';
+  var h='<div class="card"><div class="mut">📸 Foto-reto</div><h2>«'+esc(c.mission)+'»</h2>';
+  if(c.status==='cancelled')return h+'<div>Se canceló: no hubo suficientes fotos para votar.</div></div>';
+  if(c.status==='collecting'){
+    h+='<div class="big" style="font-size:44px">⏱️ <span class="cdp">'+mmss(phEnd-Date.now())+'</span></div>';
+    if(uploading)h+='<div style="margin:10px 0"><span class="spin"></span> Subiendo tu foto…</div>';
+    else if(ph.my_photo)h+='<div>✅ Tu foto está subida. Podés cambiarla hasta que se acabe el tiempo.</div><img class="fade" src="/api/photo/img/'+ph.my_photo+'?v='+phV+'" style="width:100%;border-radius:12px;margin-top:8px">';
+    else h+='<div>Sacá una foto (o elegí una de tu galería) y subila. Por participar ganás +'+ph.part+' '+CHIP+'</div>';
+    return h+'<label class="btn" style="'+(uploading?'opacity:.5;pointer-events:none':'')+'">'+(ph.my_photo?'📷 Cambiar foto':'📷 Sacar / elegir foto')+'<input type="file" accept="image/*" style="display:none" onchange="upPhoto(this)"></label></div>';
+  }
+  if(c.status==='voting'){
+    h+='<div class="big" style="font-size:44px">🗳️ <span class="cdp">'+mmss(phEnd-Date.now())+'</span></div><div>Tocá una foto para verla en grande y votá la que más te guste. Los votos no se ven hasta el final, y tu propia foto no se puede votar.</div></div>';
+    return h+'<div class="pg">'+(ph.photos||[]).map(function(x){
+      return '<div class="ph'+(ph.my_vote===x.id?' sel':'')+'"><div class="pn">#'+x.n+'</div><img loading="lazy" src="/api/photo/img/'+x.id+'" onclick="zoomP('+x.id+','+x.n+','+(x.mine?'true':'false')+',true)">'+
+        (x.mine?'<div class="sm">Tu foto</div>':'<button class="'+(ph.my_vote===x.id?'':'sec')+'" onclick="voteP('+x.id+')">'+(ph.my_vote===x.id?'✅ Tu voto':'Votar')+'</button>')+'</div>';
+    }).join('')+'</div>';
+  }
+  var rs=ph.results||[],win=rs.filter(function(r){return r.winner});
+  h+=win.length?'<div class="pop" style="color:var(--ac);font-weight:800;font-size:20px">🏆 '+win.map(function(r){return esc(r.name)}).join(' y ')+' (+'+ph.prize+' '+CHIP+')</div>':'<div>Nadie votó: no hubo ganador.</div>';
+  var big=rs.filter(function(r){return r.winner}).map(function(r){
+    return '<div class="card" style="padding:8px"><img src="/api/photo/img/'+r.id+'" style="width:100%;border-radius:12px;display:block" onclick="zoomP('+r.id+','+r.n+',false,false)"><div class="row"><span>🏆 <b>#'+r.n+'</b> '+esc(r.name)+'</span><b>'+r.votes+' votos</b></div></div>'}).join('');
+  var rest=rs.filter(function(r){return !r.winner});
+  return h+'</div>'+big+(rest.length?'<div class="card"><h2>Resto de las fotos</h2>'+rest.map(function(r){
+    return '<div class="row"><img src="/api/photo/img/'+r.id+'" style="width:84px;height:84px;object-fit:cover;border-radius:10px" onclick="zoomP('+r.id+','+r.n+',false,false)"><span style="flex:1"><b>#'+r.n+'</b> '+esc(r.name)+'</span><b>'+r.votes+' votos</b></div>'}).join('')+'</div>':'');
+}
+
+/* ---------- reloj, polling y conexión ---------- */
+function tickEls(sel,ms,fn){
+  var e=document.querySelectorAll(sel);
+  for(var i=0;i<e.length;i++){e[i].textContent=mmss(ms);e[i].classList.toggle('urgent',ms>0&&ms<=10000)}
+}
+function tick(){
+  tickEls('.cd',betEnd-Date.now());tickEls('.cd2',startEnd-Date.now());tickEls('.cdp',phEnd-Date.now());
+  if(bet&&bet.betting&&Date.now()>=betEnd){bet.betting=false;draw();render(true)}
+  if(bet&&bet.cooldown&&Date.now()>=startEnd){bet.cooldown=false;fetch('/api/version').then(function(){setTimeout(function(){render(true)},700)})}
+  var c=ph&&ph.challenge;
+  if(c&&(c.status==='collecting'||c.status==='voting')&&Date.now()>=phEnd&&!ph.nudged){ph.nudged=true;fetch('/api/version').then(function(){setTimeout(function(){render(true)},900)})}
+}
+function poll(){
+  fetch('/api/version').then(function(r){return r.json()}).then(function(j){
+    document.body.classList.remove('offline');
+    if(j.v!==ver){ver=j.v;render()}
+  }).catch(function(){document.body.classList.add('offline')});
+}
+function start(){
+  ver=-1;lastSig='';lastChips=null;tab='home';
+  $('#app').innerHTML=SKEL;
+  poll();clearInterval(pollT);pollT=setInterval(poll,4500);clearInterval(tickT);tickT=setInterval(tick,1000);
+}
+document.addEventListener('focusout',function(){setTimeout(render,400)});
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&token)poll()});   // al volver a la app, actualiza ya
+window.addEventListener('online',function(){if(token)poll()});
+
+if(token)start();else loginView();
+</script></body></html>

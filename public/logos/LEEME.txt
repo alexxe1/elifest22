@@ -1,0 +1,12 @@
+LOGOS REALES (opcional)
+
+Sin hacer nada, el sistema muestra una insignia con los colores y la sigla de cada club.
+Si querés el escudo oficial, copiá acá imágenes PNG (cuadradas, ~128x128, mejor con fondo transparente)
+con EXACTAMENTE estos nombres ABRÍ public/teams.js Y CAMBIÁ  var USE_LOGOS = false;  POR  var USE_LOGOS = true;  y volvé a correr "npx wrangler deploy":
+
+  napoli.png        leverkusen.png    arsenal.png       psg.png
+  real-madrid.png   barcelona.png     liverpool.png     man-city.png
+  bayern.png        atletico.png      man-united.png    chelsea.png
+  spurs.png
+
+Los que falten siguen mostrando la insignia de colores.
