@@ -1,6 +1,6 @@
 # ELIFEST 22 🎉
 
-Sistema digital para una fiesta de ~26 personas: fichas, ranking en vivo, torneos con brackets y apuestas,
+Sistema digital para mi cumpleaños número 22. Tiene fichas, ranking en vivo, torneos con brackets, apuestas,
 búsqueda del tesoro con QRs y foto-retos con votación. Pensado para usarse **una sola noche** desde los celulares
 de los invitados, con pantalla de TV y una PC "kiosco" junto a la Xbox.
 
